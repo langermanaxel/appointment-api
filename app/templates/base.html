@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Gestión de Turnos{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+
+<header>
+    <h1>Gestión de Turnos</h1>
+    <nav>
+        <a href="{{ url_for('routes.show_appointments') }}">Turnos</a>
+        <a href="{{ url_for('routes.new_appointment') }}">Nuevo turno</a>
+    </nav>
+</header>
+
+<section class="flash-container">
+  <!-- 🔔 Flash messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+  <ul class="flashes">
+    {% for category, message in messages %}
+      <li class="{{ category }}">{{ message }}</li>
+    {% endfor %}
+  </ul>
+{% endif %}
+{% endwith %}
+</section>
+
+<main>
+    {% block content %}{% endblock %}
+</main>
+
+</body>
+</html>

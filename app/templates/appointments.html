@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Turnos{% endblock %}
+
+{% block content %}
+<h2>Listado de turnos</h2>
+
+<table>
+    <thead>
+        <tr>
+            <th>Usuario</th>
+            <th>Fecha y hora</th>
+            <th>Estado</th>
+            <th>Acción</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for appointment in appointments %}
+        <tr>
+            <td>{{ appointment.user_name }}</td>
+            <td>{{ appointment.appointment_time }}</td>
+            <td>{{ appointment.status }}</td>
+            <td>
+                {% if appointment.status == "active" %}
+                <form method="post" action="{{ url_for('routes.cancel_appointment_view', appointment_id=appointment.id) }}">
+                    <button type="submit">Cancelar</button>
+                </form>
+                {% else %}
+                —
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

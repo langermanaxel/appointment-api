@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Nuevo turno{% endblock %}
+
+{% block content %}
+<h2>Crear nuevo turno</h2>
+
+<form method="post">
+    <label>
+        Nombre del usuario:
+        <input type="text" name="user_name" required minlength="3">
+    </label>
+
+    <label>
+        Fecha y hora:
+        <input type="datetime-local" name="appointment_time" required min="{{ min_datetime }}">
+    </label>
+
+    <button type="submit">Crear turno</button>
+</form>
+
+{% if error %}
+<p class="error">{{ error }}</p>
+{% endif %}
+{% endblock %}
