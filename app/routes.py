@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from flask import (
     Blueprint,
@@ -21,7 +21,6 @@ from app.services import (
 
 routes = Blueprint("routes", __name__)
 
-
 # -----------------------------
 # API REST
 # -----------------------------
@@ -40,8 +39,8 @@ def create():
     except ValidationError as e:
         return jsonify({"error": e.errors()}), 400
 
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+    except ValueError:
+        return jsonify({"error": "Datos inválidos"}), 400
 
 
 @routes.route("/appointments", methods=["GET"])
@@ -85,8 +84,8 @@ def cancel(appointment_id: int):
             "id": appointment.id,
         })
 
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+    except ValueError:
+        return jsonify({"error": "Datos inválidos"}), 400
 
 
 # -----------------------------
@@ -106,15 +105,32 @@ def show_appointments():
 
 @routes.route("/appointments/new", methods=["GET", "POST"])
 def new_appointment():
+    # Hora mínima local (Argentina)
     min_datetime = datetime.now().strftime("%Y-%m-%dT%H:%M")
 
     if request.method == "POST":
         try:
+            raw_dt = request.form["appointment_time"]
+
+            # ✅ Parse explícito de datetime-local
+            appointment_time_local = datetime.strptime(
+                raw_dt, "%Y-%m-%dT%H:%M"
+            )
+
+            # Timezone Argentina (UTC-3)
+            argentina_tz = timezone(timedelta(hours=-3))
+            appointment_time_local = appointment_time_local.replace(
+                tzinfo=argentina_tz
+            )
+
+            # Convertir a UTC
+            appointment_time_utc = appointment_time_local.astimezone(
+                timezone.utc
+            )
+
             data = AppointmentCreate(
                 user_name=request.form["user_name"],
-                appointment_time=datetime.fromisoformat(
-                    request.form["appointment_time"]
-                ),
+                appointment_time=appointment_time_utc,
             )
 
             with get_db() as db:
@@ -124,18 +140,23 @@ def new_appointment():
             return redirect(url_for("routes.show_appointments"))
 
         except ValidationError as e:
-            flash(e.errors()[0]["msg"], "danger")
+            # Debug real (temporal)
+            print("VALIDATION ERROR:", e.errors())
+            flash("Datos inválidos", "danger")
 
         except ValueError as e:
-            flash(str(e), "danger")
+            print("VALUE ERROR:", repr(e))
+            flash("Datos inválidos", "danger")
 
-        except Exception:
+        except Exception as e:
+            print("ERROR REAL:", repr(e))
             flash("Ocurrió un error inesperado", "danger")
 
     return render_template(
         "create_appointment.html",
         min_datetime=min_datetime,
     )
+
 
 
 @routes.route("/appointments/<int:appointment_id>/cancel", methods=["POST"])
@@ -146,7 +167,7 @@ def cancel_appointment_view(appointment_id: int):
 
         flash("Turno cancelado correctamente", "info")
 
-    except Exception as e:
-        flash(str(e), "error")
+    except ValueError:
+        flash("Datos inválidos", "danger")
 
     return redirect(url_for("routes.show_appointments"))
