@@ -2,38 +2,40 @@ import os
 import logging
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 
-# Configuración del logger
-logging.basicConfig(level=logging.INFO)
+# Logger (configurado a nivel aplicación, no aquí)
 logger = logging.getLogger(__name__)
 
-# Base para modelos ORM
+# Base ORM
 Base = declarative_base()
 
+
+# -----------------------------
+# Utils
+# -----------------------------
+
 def validate_database_url(url: str) -> bool:
-    """
-    Valida que la URL de la base de datos tenga un esquema válido.
-    """
     parsed = urlparse(url)
-    if not parsed.scheme or not parsed.path:
-        logger.error(f"URL de base de datos inválida: {url}")
-        return False
-    return True
+    return bool(parsed.scheme and parsed.path)
+
+
+# -----------------------------
+# Engine factory
+# -----------------------------
 
 def get_engine(
     database_url: str,
     async_mode: bool = False,
-    pool_config: Optional[Dict[str, Any]] = None
-) -> "Engine | AsyncEngine":
-    """
-    Factory para crear un engine SQLAlchemy, soportando
-    sync y async, diferentes motores de DB y parámetros de pool dinámicos.
-    """
+    pool_config: Optional[Dict[str, Any]] = None,
+) -> Engine | AsyncEngine:
+
     if not validate_database_url(database_url):
         raise ValueError("DATABASE_URL inválida")
 
@@ -42,7 +44,6 @@ def get_engine(
     if database_url.startswith("sqlite"):
         engine_kwargs["connect_args"] = {"check_same_thread": False}
     else:
-        # Pool dinámico con valores por defecto si no se pasan
         pool_config = pool_config or {}
         engine_kwargs.update({
             "pool_size": pool_config.get("pool_size", 5),
@@ -52,35 +53,24 @@ def get_engine(
         })
 
     try:
-        if async_mode:
-            engine = create_async_engine(database_url, **engine_kwargs)
-        else:
-            engine = create_engine(database_url, **engine_kwargs)
+        engine = (
+            create_async_engine(database_url, **engine_kwargs)
+            if async_mode
+            else create_engine(database_url, **engine_kwargs)
+        )
         logger.info(f"Engine creado exitosamente para {database_url}")
         return engine
-    except SQLAlchemyError as e:
-        logger.exception(f"Error al crear engine: {e}")
+    except SQLAlchemyError:
+        logger.exception("Error al crear engine")
         raise
 
-def get_session(engine: "Engine | AsyncEngine") -> Session:
-    """
-    Devuelve una sesión de SQLAlchemy para operaciones de base de datos.
-    """
-    try:
-        SessionLocal = sessionmaker(
-            autocommit=False,
-            autoflush=False,
-            bind=engine,
-        )
-        return SessionLocal()
-    except SQLAlchemyError as e:
-        logger.exception(f"Error al crear sesión: {e}")
-        raise
 
-# URL de la base de datos (sin exponer credenciales en el código)
+# -----------------------------
+# Configuración global
+# -----------------------------
+
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///appointments.db")
 
-# Configuración de pool dinámica según entorno
 POOL_CONFIG = {
     "pool_size": int(os.getenv("DB_POOL_SIZE", 5)),
     "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", 10)),
@@ -88,6 +78,32 @@ POOL_CONFIG = {
     "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", 1800)),
 }
 
-# Crear engine y sesión
-engine = get_engine(DATABASE_URL, async_mode=False, pool_config=POOL_CONFIG)
-session = get_session(engine)
+engine = get_engine(
+    DATABASE_URL,
+    async_mode=False,
+    pool_config=POOL_CONFIG,
+)
+
+# Session factory (una sesión por request)
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+)
+
+
+# -----------------------------
+# Session context manager
+# -----------------------------
+
+@contextmanager
+def get_db() -> Session:
+    """
+    Provee una sesión de base de datos por request.
+    Garantiza cierre correcto incluso ante excepciones.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

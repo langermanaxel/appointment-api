@@ -1,4 +1,5 @@
 import os
+import logging
 from flask import Flask
 
 from app.config import DevelopmentConfig, ProductionConfig
@@ -11,36 +12,44 @@ from app.error_handlers import (
 
 
 def create_app() -> Flask:
-    """Application factory."""
+    """Flask application factory."""
     app = Flask(__name__)
 
-    # Selección de configuración según entorno
-    env = os.getenv("FLASK_ENV", "development")
+    logging.basicConfig(level=logging.INFO)
 
-    app.config.from_object(
-        ProductionConfig if env == "production" else DevelopmentConfig
+    env = os.getenv("APP_ENV", "development")
+    logging.info(f"Starting application in {env} mode")
+
+    # Cargar configuración desde Pydantic
+    config = (
+        ProductionConfig()
+        if env == "production"
+        else DevelopmentConfig()
     )
 
-    # Fail fast: nunca arrancar sin SECRET_KEY
+    app.config.from_mapping(config.model_dump())
+
+    # Fail fast (nunca arrancar sin SECRET_KEY)
     if not app.config.get("SECRET_KEY"):
         raise RuntimeError("SECRET_KEY no configurada")
 
-    # Registro de handlers de errores
+    app.secret_key = app.config["SECRET_KEY"]
+
+    # Error handlers
     register_error_handlers(app)
     register_web_error_handlers(app)
 
-    # Registro de blueprints
+    # Blueprints
     app.register_blueprint(routes)
 
-    # Headers de seguridad
+    # Security headers
     @app.after_request
     def add_security_headers(response):
-        headers = app.config.get("SECURITY_HEADERS", {})
-        for key, value in headers.items():
-            response.headers.setdefault(key, value)
+        for k, v in app.config.get("SECURITY_HEADERS", {}).items():
+            response.headers.setdefault(k, v)
         return response
 
-    # Lazy DB init (solo desarrollo)
+    # Inicializar DB solo en desarrollo
     if env == "development":
         with app.app_context():
             Base.metadata.create_all(bind=engine)
@@ -48,9 +57,8 @@ def create_app() -> Flask:
     return app
 
 
-# Entrypoint para Gunicorn / uWSGI
+# Entry point
 app = create_app()
 
 if __name__ == "__main__":
-    # Solo desarrollo
     app.run()
